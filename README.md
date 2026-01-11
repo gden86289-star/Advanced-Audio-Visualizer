@@ -5,3 +5,7 @@ link made by GamersDen
 ##
 music
 So once it downloaded, open the file with browser. But the experimental music player only supports mp3 & flac audio format
+##
+|how to downloaded|
+
+||install the Advanced Audio Visualizer.html and open it on browser||
