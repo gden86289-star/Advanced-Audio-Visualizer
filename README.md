@@ -9,3 +9,5 @@ So once it downloaded, open the file with browser. But the experimental music pl
 |how to downloaded|
 
 ||install the Advanced Audio Visualizer.html and open it on browser||
+
+![image alt](https://github.com/gden86289-star/Advanced-Audio-Visualizer/blob/e10933b23ca3afc7631d83dc7a5359e72d272859/IMG_20260111_183947.jpg).
