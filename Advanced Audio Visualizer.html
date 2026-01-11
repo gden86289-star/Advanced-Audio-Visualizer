@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Audio Visualizer</title>
+    <style>
+        body {
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            height: 100vh;
+        }
+
+        #controls {
+            background-color: #252526;
+            padding: 10px;
+            border-bottom: 1px solid #333;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-around;
+            align-items: center;
+            width: 90%;
+        }
+
+        #fileInput,
+        #playButton,
+        #pauseButton,
+        #stopButton {
+            padding: 8px 12px;
+            margin: 5px;
+            background-color: #3f3f46;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        #fileInput:hover,
+        #playButton:hover,
+        #pauseButton:hover,
+        #stopButton:hover {
+            background-color: #569cd6;
+        }
+
+        #waveformContainer {
+            display: flex;
+            width: 100%;
+            justify-content: space-around;
+            align-items: center;
+            padding: 10px;
+        }
+
+        .waveformCanvas {
+            width: 45%;
+            max-width: 45%;
+            height: auto;
+            border: 1px solid #333;
+            background-color: #000;
+        }
+
+        #xyOscilloscopeCanvas {
+            width: 400px;
+            height: 400px;
+            border: 1px solid #333;
+            background-color: #000;
+        }
+
+        .label {
+            font-size: 0.8em;
+            margin: 5px;
+        }
+
+        #visualContainer {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            width: 90%;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>But only support mp3 & flac audio format.</h1>
+    <div id="controls">
+        <input type="file" id="fileInput" accept=".wav, .mp3, .flac, .ogg">
+        <button id="playButton">Play</button>
+        <button id="pauseButton">Pause</button>
+        <button id="stopButton">Stop</button>
+    </div>
+
+    <div id="waveformContainer">
+        <div class="label">Left Channel</div>
+        <canvas id="leftWaveformCanvas" class="waveformCanvas" width="640" height="360"></canvas>
+        <div class="label">Right Channel</div>
+        <canvas id="rightWaveformCanvas" class="waveformCanvas" width="640" height="360"></canvas>
+    </div>
+
+    <div id="visualContainer">
+        <canvas id="xyOscilloscopeCanvas" width="400" height="400"></canvas>
+    </div>
+
+    <script>
+        // --- Audio and Visualizer Initialization ---
+        const fileInput = document.getElementById('fileInput');
+        const playButton = document.getElementById('playButton');
+        const pauseButton = document.getElementById('pauseButton');
+        const stopButton = document.getElementById('stopButton');
+        const leftWaveformCanvas = document.getElementById('leftWaveformCanvas');
+        const rightWaveformCanvas = document.getElementById('rightWaveformCanvas');
+        const xyOscilloscopeCanvas = document.getElementById('xyOscilloscopeCanvas');
+        const leftWaveformCtx = leftWaveformCanvas.getContext('2d');
+        const rightWaveformCtx = rightWaveformCanvas.getContext('2d');
+        const xyOscilloscopeCtx = xyOscilloscopeCanvas.getContext('2d');
+
+        let audioContext;
+        let audioBuffer;
+        let sourceNode;
+        let analyserLeft;
+        let analyserRight;
+        let splitter;
+        let isPlaying = false;
+
+        const setupAudioNodes = () => {
+            sourceNode = audioContext.createBufferSource();
+            sourceNode.buffer = audioBuffer;
+            sourceNode.loop = true;
+
+            splitter = audioContext.createChannelSplitter(2);
+            analyserLeft = audioContext.createAnalyser();
+            analyserRight = audioContext.createAnalyser();
+
+            // Adjust FFT size for performance (lower = faster, less detail)
+            analyserLeft.fftSize = 2048;
+            analyserRight.fftSize = 2048;
+
+            sourceNode.connect(splitter);
+            splitter.connect(analyserLeft, 0);
+            splitter.connect(analyserRight, 1);
+            analyserLeft.connect(audioContext.destination);
+            analyserRight.connect(audioContext.destination);
+        };
+
+        // --- Drawing Functions ---
+        const drawWaveform = (canvas, context, analyser, channelLabel) => {
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+
+            context.clearRect(0, 0, canvas.width, canvas.height);
+
+            const draw = () => {
+                analyser.getByteTimeDomainData(dataArray);
+                context.fillStyle = '#000';
+                context.fillRect(0, 0, canvas.width, canvas.height);
+                context.lineWidth = 2;
+                context.strokeStyle = '#569cd6';
+                context.beginPath();
+
+                const sliceWidth = canvas.width / bufferLength;
+                let x = 0;
+
+                for (let i = 0; i < bufferLength; i++) {
+                    const v = dataArray[i] / 128.0;
+                    const y = v * (canvas.height / 2);
+
+                    if (i === 0) {
+                        context.moveTo(x, y);
+                    } else {
+                        context.lineTo(x, y);
+                    }
+
+                    x += sliceWidth;
+                }
+
+                context.lineTo(canvas.width, canvas.height / 2);
+                context.stroke();
+
+                requestAnimationFrame(draw);
+            };
+
+            draw();
+        };
+
+        const drawXYOscilloscope = () => {
+            const bufferLength = analyserLeft.frequencyBinCount;
+            const dataArrayLeft = new Uint8Array(bufferLength);
+            const dataArrayRight = new Uint8Array(bufferLength);
+
+            xyOscilloscopeCtx.clearRect(0, 0, xyOscilloscopeCanvas.width, xyOscilloscopeCanvas.height);
+
+            const draw = () => {
+                analyserLeft.getByteTimeDomainData(dataArrayLeft);
+                analyserRight.getByteTimeDomainData(dataArrayRight);
+
+                xyOscilloscopeCtx.fillStyle = '#000';
+                xyOscilloscopeCtx.fillRect(0, 0, xyOscilloscopeCanvas.width, xyOscilloscopeCanvas.height);
+                xyOscilloscopeCtx.beginPath();
+                xyOscilloscopeCtx.strokeStyle = '#569cd6';
+                xyOscilloscopeCtx.lineWidth = 1;
+
+                const centerX = xyOscilloscopeCanvas.width / 2;
+                const centerY = xyOscilloscopeCanvas.height / 2;
+
+                let x, y; // Declare x and y here
+
+                for (let i = 0; i < bufferLength; i++) {
+                    x = (dataArrayLeft[i] / 255 - 0.5) * xyOscilloscopeCanvas.width;  // Normalize to -0.5 to 0.5
+                    y = (dataArrayRight[i] / 255 - 0.5) * xyOscilloscopeCanvas.height;
+
+                    if (i === 0) {
+                        xyOscilloscopeCtx.moveTo(x + centerX, y + centerY); // Center the origin
+                    } else {
+                        xyOscilloscopeCtx.lineTo(x + centerX, y + centerY);
+                    }
+                }
+
+                xyOscilloscopeCtx.stroke();
+
+                // Throttle to 60 FPS (approx)
+                setTimeout(() => {
+                    requestAnimationFrame(draw);
+                }, 1000 / 60);  // 16.66 ms delay
+            };
+
+            draw();
+        };
+
+        // --- Event Listeners ---
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+
+            if (file) {
+                const reader = new FileReader();
+
+                reader.onload = (event) => {
+                    const arrayBuffer = event.target.result;
+
+                    if (!audioContext) {
+                        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    }
+
+                    audioContext.decodeAudioData(arrayBuffer, (buffer) => {
+                        audioBuffer = buffer;
+
+                        if (sourceNode) {
+                            sourceNode.disconnect();
+                        }
+                        setupAudioNodes();
+                        drawWaveform(leftWaveformCanvas, leftWaveformCtx, analyserLeft, "Left Channel");
+                        drawWaveform(rightWaveformCanvas, rightWaveformCtx, analyserRight, "Left Channel");
+                        drawXYOscilloscope(); // Start XY Oscilloscope here
+
+                    }, (error) => {
+                        console.error("Decoding error", error);
+                        alert("Error decoding audio data");
+                    });
+                };
+
+                reader.onerror = (error) => {
+                    console.error("File read error", error);
+                    alert("Error reading the file");
+                };
+
+                reader.readAsArrayBuffer(file);
+            }
+        });
+
+        playButton.addEventListener('click', () => {
+            if (audioBuffer) {
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    setupAudioNodes();
+                }
+
+                if (audioContext.state === 'suspended') {
+                    audioContext.resume();
+                }
+
+                sourceNode.start(0);
+                isPlaying = true;
+            }
+        });
+
+        pauseButton.addEventListener('click', () => {
+            if (isPlaying && audioContext) {
+                audioContext.suspend();
+                isPlaying = false;
+            }
+        });
+
+        stopButton.addEventListener('click', () => {
+            if (isPlaying && audioContext) {
+                sourceNode.stop();
+                sourceNode.disconnect();
+                setupAudioNodes();
+                isPlaying = false;
+            }
+        });
+    </script>
+</body>
+</html>
+
